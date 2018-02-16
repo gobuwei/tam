@@ -1,0 +1,255 @@
+#!/bin/bash
+
+PROGNAME=$(basename $0)
+
+indexfile="gtags.files"
+projfile="$HOME/.tam"
+tmpfile="/tmp/tam_tmpfile"
+
+DEFAULT_TYPES='c,cpp,h'
+
+T_RST=$(tput sgr0)
+T_YEL=$(tput setaf 3)
+T_RED=$(tput setaf 1)
+
+proj_name() {
+    v=${1/PROJECT:/}
+    v=${v%%=*}
+	echo "$v"
+}
+
+proj_type() {
+    v=${1#*\[}
+    v=${v%%\]*}
+	echo "$v"
+}
+
+proj_dir() {
+	v=${1##*\[}
+	v=${v%%\]*}
+	echo "$v"
+}
+
+# $1: name, $2: types, $3: dirs
+proj_add() {
+	echo "PROJECT:$1=[$2][$3]" >> $projfile
+}
+
+# $1: name
+proj_rm() {
+	[ -f "$projfile" ] && sed -i "/^PROJECT:$1=/d" $projfile
+}
+
+# $1: name
+proj_test() {
+	grep "^PROJECT:$1=" $projfile 1>/dev/null 2>/dev/null
+	return $?
+}
+
+gen_tags() {
+    which gtags 1>/dev/null 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        if [ -f "GTAGS" ]; then
+            echo "  UPD     gtags" && global -u
+        else
+            echo "  GEN     gtags" && gtags
+        fi
+    else
+        [ -f "cscope.out" ] && echo "  UPD     cscope" || echo "  GEN     cscope"
+        cscope -b -q -i $indexfile
+    fi
+}
+
+# $1: dirs, $2: types
+gen_filelist_tags() {
+    dirs="$1"
+    types="$2"
+
+    for d in $dirs; do
+        [ ! -d "$d" ] && echo "error: path '$d' no exist" && exit
+    done
+
+	# Convert file types format to meet find options
+	IFS=","
+	exprs=""
+	for t in $2; do
+        exprs="$exprs -o -name '*.$t' -type f"
+    done
+	exprs=${exprs#*-o }
+	IFS=" "
+
+    rm -f $tmpfile
+
+	if [ -z "$dirs" ]; then
+		# Find root directory and all subdirectories
+		echo $exprs | xargs find >$tmpfile
+	else
+        # Find '.' (or './') seperately from other directories
+        _dirs=$(echo "$dirs" | sed 's/\.[\/]\{0,1\} //g' | sed 's/\.[\/]\{0,1\}$//g')
+        [ "$_dirs" != "$dirs" ] && echo $exprs | xargs find -maxdepth 1 >>$tmpfile
+        [ -z "$_dirs" ] || echo $exprs | xargs find $_dirs >>$tmpfile
+    fi
+
+	if [ -f "$tmpfile" ]; then
+		sed "s/^.\///" $tmpfile | sort -u >$indexfile
+		rm -f $tmpfile
+        gen_tags
+	fi
+}
+
+check_tag_file() {
+    [ -f $indexfile -o -f 'GTAGS' -o -f 'cscope.out' ] && echo '1' || echo '0'
+}
+
+help_gen="gen [ -t TYPES [ DIRS ] | NAME ]
+
+Update tags if tag files exist, or generate tags for:
+
+  * Project 'NAME' if NAME is given, or
+  * Common project, which can be limited by the giving TYPES and DIRS
+
+Using a project name is a brief way to get TYPES/DIRS from a defined
+project rather than typing them every time.
+
+Examples:
+  $ $PROGNAME gen -t c,h dir1 dir2 dir3
+  $ $PROGNAME add foo -t c,h dir1 dir2 dir3
+  $ $PROGNAME gen foo
+"
+
+cmd_gen() {
+    if [ $(check_tag_file) = '1' ]; then
+        gen_tags
+    else
+        if [ "$1" = '-t' ]; then
+            types="$2"
+            shift 2
+            dirs="$@"
+        else
+            types=$DEFAULT_TYPES
+            if [ ! -z "$1" ]; then
+                line=$(grep "^PROJECT:$1=" $projfile 2>/dev/null)
+                if [ ! -z "$line" ]; then
+                    types=$(proj_type "$line")
+                    dirs=$(proj_dir "$line")
+                else
+                    dirs="$@"
+                    types=$DEFAULT_TYPES
+                fi
+            else
+                dirs=''
+            fi
+        fi
+
+        gen_filelist_tags "$dirs" "$types"
+    fi
+}
+
+help_add="add NAME [ -t TYPES ] DIRS ...
+
+Add a project of name 'NAME'.
+
+A project can help to save serch TYPES and DIRS that is usable when to create tags
+file using project.
+
+Option '-t' specifies what file types are. Format of TYPES is like '$DEFAULT_TYPES' (the
+default file types), which means *.[ch] and *.cpp files will be tagging for.
+
+'DIRS' are the paths to search in for files of type 'TYPES'.
+"
+
+cmd_add() {
+	test -z "$1" && echo "error: invalid arguments" && exit 1
+	proj_test "$1" && echo "Project '$1' exists!" && exit 1
+
+	name="$1"
+	shift
+
+	if [ "$1" = "-t" ]; then
+		test -z "$2" && echo "no given file types" && exit 1
+		types="$2"
+		shift 2
+	else
+		types=$DEFAULT_TYPES
+	fi
+
+	dirs="$@"
+	for dir in $dirs; do
+		test ! -d "$dir" && echo "error: invalid directory '$dir'" && exit 1
+	done
+
+    # Trim tail '/' in every path
+    dirs=$(echo "$dirs" | sed 's#/ # #; s#/$##')
+
+    proj_add "$name" "$types" "$dirs"
+}
+
+help_rm="rm [ -a | NAME ... ]
+
+Remove project by giving one or more project name.
+If use '-a' instead, then remove all projects.
+"
+
+cmd_rm() {
+    [ -z "$1" ] && echo "error: please give a project name" && exit 1
+	if [ "$1" = "-a" ]; then
+       proj_rm ".\{1,\}"
+   else
+       names="$@"
+       for n in $names; do
+           proj_test $n && echo "Remove project '$n'" && proj_rm $n
+       done
+   fi
+}
+
+cmd_ls() {
+    grep "^PROJECT:" $projfile 2>/dev/null | while read line; do
+        echo "${T_YEL}$(proj_name "$line"):${T_RST}"
+        echo "${T_RED}  T:${T_RST} '$(proj_type "$line")'"
+        echo "${T_RED}  P:${T_RST} '$(proj_dir  "$line")'"
+        echo ""
+    done
+}
+
+cmd_clean() {
+    rm -f cscope* tags GTAGS GPATH GRTAGS gtags.files
+}
+
+__help__="\
+usage:      $PROGNAME COMMAND [ ARGS ]
+            $PROGNAME help [ COMMAND ]
+
+COMMAND available:
+  help      Show this message or the detail of command 'COMMAND'
+  add       Add a project
+  rm        Remove project
+  ls        List all projects
+  gen       Generate/update tags
+  clean     Clean tag files
+"
+
+cmd_help() {
+    if [ -z "$1" ]; then
+        echo "$__help__"
+    elif [ "$(type -t "cmd_$1")" = "function" ]; then
+        eval help_cmd="\$help_$1"
+        [ ! -z "$help_cmd" ] && echo -e "usage:      $PROGNAME $help_cmd"
+    fi
+}
+
+#
+# Parsing command line
+#
+case "$1" in
+    -h|--help) echo "$__help__";;
+    '') [ $(check_tag_file) = '1' ] && gen_tags || echo "$__help__";;
+    *)  cmd="$1"
+        if [ "$(type -t "cmd_$cmd")" = "function" ]; then
+            shift
+            cmd_$cmd "$@"
+        else
+            echo -e "error: Unknown command '$cmd'\n\n$__help__"
+        fi
+        ;;
+esac
