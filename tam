@@ -83,11 +83,11 @@ gen_filelist_tags() {
 
 	if [ -z "$dirs" ]; then
 		# Find root directory and all subdirectories
-		echo $exprs | xargs find >$tmpfile
+		echo $exprs | xargs find . >$tmpfile
 	else
         # Find '.' (or './') seperately from other directories
         _dirs=$(echo "$dirs" | sed 's/\.[\/]\{0,1\} //g' | sed 's/\.[\/]\{0,1\}$//g')
-        [ "$_dirs" != "$dirs" ] && echo $exprs | xargs find -maxdepth 1 >>$tmpfile
+        [ "$_dirs" != "$dirs" ] && echo $exprs | xargs find . -maxdepth 1 >>$tmpfile
         [ -z "$_dirs" ] || echo $exprs | xargs find $_dirs >>$tmpfile
     fi
 
