@@ -6,7 +6,7 @@ indexfile="gtags.files"
 projfile="$HOME/.tam"
 tmpfile="/tmp/tam_tmpfile"
 
-DEFAULT_TYPES='c,cpp,h'
+DEFAULT_TYPES='c,cpp,h,S,s'
 
 T_RST=$(tput sgr0)
 T_YEL=$(tput setaf 3)
