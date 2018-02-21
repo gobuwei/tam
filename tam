@@ -53,7 +53,7 @@ gen_tags() {
         if [ -f "GTAGS" ]; then
             echo "  UPD     gtags" && global -u
         else
-            echo "  GEN     gtags" && gtags
+            echo "  GEN     gtags" && gtags -f $indexfile
         fi
     else
         [ -f "cscope.out" ] && echo "  UPD     cscope" || echo "  GEN     cscope"
@@ -86,8 +86,9 @@ gen_filelist_tags() {
 		echo $exprs | xargs find . >$tmpfile
 	else
         # Find '.' (or './') seperately from other directories
-        _dirs=$(echo "$dirs" | sed 's/\.[\/]\{0,1\} //g' | sed 's/\.[\/]\{0,1\}$//g')
-        [ "$_dirs" != "$dirs" ] && echo $exprs | xargs find . -maxdepth 1 >>$tmpfile
+        dirs=$(echo "$dirs" | sed 's#/ # #g; s#/$##g')
+        _dirs=$(echo "$dirs" | sed 's#\.[/]\{0,1\} ##g; s#\.[/]\{0,1\}$##g')
+        [ "$_dirs" != "$dirs" ] && echo $exprs | xargs find . -maxdepth 1
         [ -z "$_dirs" ] || echo $exprs | xargs find $_dirs >>$tmpfile
     fi
 
@@ -213,7 +214,7 @@ cmd_ls() {
 }
 
 cmd_clean() {
-    rm -f cscope* tags GTAGS GPATH GRTAGS gtags.files
+    rm -f cscope* tags GTAGS GPATH GRTAGS gtags.files $indexfile
 }
 
 __help__="\
