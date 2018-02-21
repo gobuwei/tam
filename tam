@@ -2,7 +2,7 @@
 
 PROGNAME=$(basename $0)
 
-indexfile="gtags.files"
+indexfile="GFILES"
 projfile="$HOME/.tam"
 tmpfile="/tmp/tam_tmpfile"
 
